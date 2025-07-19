@@ -426,61 +426,11 @@ class BLEScannerApp(QMainWindow):
             }
         """)
         
-        self.filter_zt_button = QPushButton("🔍 ZT Peripherals")
-        self.filter_zt_button.clicked.connect(self.filter_zt_peripherals)
-        self.filter_zt_button.setStyleSheet("""
-            QPushButton {
-                background-color: #757575;
-                color: #ffffff;
-                border: 1px solid #9e9e9e;
-                padding: 8px 16px;
-                font-size: 12px;
-                font-weight: 600;
-                border-radius: 4px;
-                min-width: 100px;
-            }
-            QPushButton:hover {
-                background-color: #9e9e9e;
-                color: white;
-                border-color: #bdbdbd;
-            }
-            QPushButton:pressed {
-                background-color: #616161;
-                color: white;
-                border-color: #757575;
-            }
-        """)
-        
-        self.manufacturer_viewer_button = QPushButton("🏭 Manufacturer Data")
-        self.manufacturer_viewer_button.clicked.connect(self.show_manufacturer_data_viewer)
-        self.manufacturer_viewer_button.setStyleSheet("""
-            QPushButton {
-                background-color: #757575;
-                color: #ffffff;
-                border: 1px solid #9e9e9e;
-                padding: 8px 16px;
-                font-size: 12px;
-                font-weight: 600;
-                border-radius: 4px;
-                min-width: 120px;
-            }
-            QPushButton:hover {
-                background-color: #9e9e9e;
-                color: white;
-                border-color: #bdbdbd;
-            }
-            QPushButton:pressed {
-                background-color: #616161;
-                color: white;
-                border-color: #757575;
-            }
-        """)
+
         
         button_layout.addWidget(self.scan_button)
         button_layout.addWidget(self.clear_button)
         button_layout.addWidget(self.export_button)
-        button_layout.addWidget(self.filter_zt_button)
-        button_layout.addWidget(self.manufacturer_viewer_button)
         button_layout.addStretch()
         
         layout.addLayout(button_layout)
@@ -700,28 +650,7 @@ class BLEScannerApp(QMainWindow):
         # Update status
         self.status_label.setText(f"Scanning... Found {len(self.devices)} devices")
     
-    def filter_zt_peripherals(self):
-        """Filter table to show only ZT peripherals (containing 213321 in service UUIDs)"""
-        zt_count = 0
-        total_rows = self.table.rowCount()
-        
-        for row in range(total_rows):
-            service_uuids_item = self.table.item(row, 3)  # Service UUIDs column
-            if service_uuids_item:
-                service_uuids = service_uuids_item.text()
-                if "213321" in service_uuids:
-                    # Show this row
-                    self.table.setRowHidden(row, False)
-                    zt_count += 1
-                else:
-                    # Hide this row
-                    self.table.setRowHidden(row, True)
-        
-        # Update status
-        if zt_count > 0:
-            self.status_label.setText(f"Filtered: {zt_count} ZT peripherals found")
-        else:
-            self.status_label.setText("No ZT peripherals found")
+
     
     def on_cell_clicked(self, row, column):
         """Handle cell click events"""
@@ -768,8 +697,7 @@ class BLEScannerApp(QMainWindow):
         self.raw_data_text.clear()
         self.status_label.setText("Results cleared")
         
-        # Reset filter button text
-        self.filter_zt_button.setText("🔍 Filter ZT")
+
     
     def export_results(self):
         """Export results to JSON file"""
@@ -787,40 +715,7 @@ class BLEScannerApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to export: {str(e)}")
     
-    def show_manufacturer_data_viewer(self):
-        """Show manufacturer data viewer for selected device"""
-        # Get selected row
-        current_row = self.table.currentRow()
-        if current_row < 0:
-            QMessageBox.information(self, "Manufacturer Data", "Please select a device first")
-            return
-        
-        # Get device address from selected row
-        address_item = self.table.item(current_row, 0)
-        if not address_item:
-            QMessageBox.information(self, "Manufacturer Data", "No device selected")
-            return
-        
-        address = address_item.text()
-        
-        # Find device in our data
-        device_info = None
-        for device in self.devices.values():
-            if device['address'] == address:
-                device_info = device
-                break
-        
-        if not device_info:
-            QMessageBox.information(self, "Manufacturer Data", "Device not found in data")
-            return
-        
-        # Get manufacturer data and name
-        manufacturer_data = device_info.get('raw_data', {}).get('manufacturer_data', {})
-        manufacturer_name = device_info.get('manufacturer', 'Unknown')
-        
-        # Show the dialog
-        dialog = ManufacturerDataViewer(manufacturer_data, manufacturer_name, self)
-        dialog.exec()
+
     
     def closeEvent(self, event):
         """Handle application close event"""
