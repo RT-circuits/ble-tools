@@ -1,11 +1,11 @@
 # BLE Tools
 
-- `ble_adv_serv_uuid_scanner.py`: Rough Python BLE inspector/scanner/monitor that shows service UUIDs and its details from Bluetooth advertisements. PySide6 UI. Real time updates
+- `ble_basic_scanner.py`: Rough Python BLE inspector/scanner/monitor that shows service UUIDs and its details from Bluetooth advertisements. PySide6 UI. Real time updates
 
 ## Install
 
 ```bash
-pip install PySide6 bleak==0.20.2
+pip install -r requirements.txt
 ```
 
 ## Run
