@@ -7,6 +7,9 @@ Extracts: Address, Advertised Name, Manufacturer, Service UUIDs, RSSI, Interval,
 import sys
 import asyncio
 import time
+import platform
+import traceback
+import subprocess
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import json
@@ -27,6 +30,59 @@ except ImportError:
     sys.exit(1)
 
 from manufacturer_ids import get_manufacturer_name
+
+
+def get_system_info():
+    """Get comprehensive system information for debugging"""
+    info = []
+    info.append("=== SYSTEM INFORMATION ===")
+    info.append(f"Platform: {platform.platform()}")
+    info.append(f"System: {platform.system()}")
+    info.append(f"Release: {platform.release()}")
+    info.append(f"Version: {platform.version()}")
+    info.append(f"Machine: {platform.machine()}")
+    info.append(f"Processor: {platform.processor()}")
+    info.append(f"Python Version: {sys.version}")
+    info.append(f"Python Executable: {sys.executable}")
+    
+    # Check Bluetooth status on different platforms
+    try:
+        if platform.system() == "Darwin":  # macOS
+            result = subprocess.run(['system_profiler', 'SPBluetoothDataType'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                info.append("=== BLUETOOTH STATUS (macOS) ===")
+                info.append(result.stdout[:500] + "..." if len(result.stdout) > 500 else result.stdout)
+        elif platform.system() == "Linux":
+            result = subprocess.run(['hciconfig'], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                info.append("=== BLUETOOTH STATUS (Linux) ===")
+                info.append(result.stdout)
+        elif platform.system() == "Windows":
+            result = subprocess.run(['powershell', 'Get-PnpDevice', '-Class', 'Bluetooth'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                info.append("=== BLUETOOTH STATUS (Windows) ===")
+                info.append(result.stdout)
+    except Exception as e:
+        info.append(f"Error getting Bluetooth status: {e}")
+    
+    return "\n".join(info)
+
+
+def get_detailed_error_info(error, context=""):
+    """Generate detailed error information"""
+    error_info = []
+    error_info.append("=== DETAILED ERROR INFORMATION ===")
+    error_info.append(f"Error Type: {type(error).__name__}")
+    error_info.append(f"Error Message: {str(error)}")
+    error_info.append(f"Context: {context}")
+    error_info.append("")
+    error_info.append("=== STACK TRACE ===")
+    error_info.append(traceback.format_exc())
+    error_info.append("")
+    error_info.append(get_system_info())
+    return "\n".join(error_info)
 
 
 
@@ -60,7 +116,9 @@ class BLEScannerWorker(QObject):
                 await asyncio.sleep(0.1)
                 
         except Exception as e:
-            self.error_occurred.emit(f"Scanning error: {str(e)}")
+            detailed_error = get_detailed_error_info(e, "BLE Scanner Worker - start_scanning")
+            print(f"BLE SCANNER ERROR (Terminal):\n{detailed_error}")
+            self.error_occurred.emit(f"Scanning error: {str(e)}\n\nSee terminal for detailed error information.")
         finally:
             try:
                 if self.scanner:
@@ -163,7 +221,9 @@ class BLEScannerWorker(QObject):
             self.device_found.emit(device_info)
             
         except Exception as e:
-            self.error_occurred.emit(f"Error processing device {device.address}: {str(e)}")
+            detailed_error = get_detailed_error_info(e, f"BLE Scanner Worker - detection_callback for device {device.address}")
+            print(f"BLE DEVICE PROCESSING ERROR (Terminal):\n{detailed_error}")
+            self.error_occurred.emit(f"Error processing device {device.address}: {str(e)}\n\nSee terminal for detailed error information.")
     
     def stop_scanning(self):
         """Stop BLE scanning"""
@@ -187,7 +247,12 @@ class BLEScannerThread(QThread):
     
     def run(self):
         """Run the BLE scanner"""
-        asyncio.run(self.worker.start_scanning())
+        try:
+            asyncio.run(self.worker.start_scanning())
+        except Exception as e:
+            detailed_error = get_detailed_error_info(e, "BLE Scanner Thread - run method")
+            print(f"BLE THREAD ERROR (Terminal):\n{detailed_error}")
+            self.error_occurred.emit(f"Thread error: {str(e)}\n\nSee terminal for detailed error information.")
     
     def stop(self):
         """Stop the scanner"""
@@ -594,9 +659,56 @@ class BLEScannerApp(QMainWindow):
         self.progress_bar.setVisible(False)
     
     def on_error(self, error_msg):
-        """Handle error events"""
-        self.status_label.setText(f"Error: {error_msg}")
-        QMessageBox.warning(self, "BLE Scanner Error", error_msg)
+        """Handle error events with detailed information"""
+        self.status_label.setText(f"Error: {error_msg.split('\\n')[0]}")
+        
+        # Create detailed error dialog
+        error_dialog = QMessageBox(self)
+        error_dialog.setIcon(QMessageBox.Warning)
+        error_dialog.setWindowTitle("BLE Scanner Error - Detailed Information")
+        
+        # Format the error message for better readability
+        formatted_error = error_msg.replace("\\n", "\n")
+        error_dialog.setText(f"BLE Scanner encountered an error:\n\n{formatted_error}")
+        
+        # Add system information to the dialog
+        system_info = get_system_info()
+        error_dialog.setDetailedText(system_info)
+        
+        # Add helpful troubleshooting tips
+        troubleshooting = """
+TROUBLESHOOTING TIPS:
+
+1. BLUETOOTH PERMISSIONS:
+   - Ensure Bluetooth is enabled on your system
+   - Check if the app has permission to access Bluetooth
+   - On macOS: System Preferences > Security & Privacy > Privacy > Bluetooth
+   - On Windows: Settings > Privacy > Bluetooth
+   - On Linux: Check bluetooth service status
+
+2. HARDWARE ISSUES:
+   - Verify Bluetooth adapter is working
+   - Try restarting Bluetooth service
+   - Check device manager for Bluetooth issues
+
+3. SOFTWARE DEPENDENCIES:
+   - Ensure bleak library is installed: pip install bleak
+   - Check Python version compatibility
+   - Verify PySide6 installation
+
+4. SYSTEM REQUIREMENTS:
+   - macOS 10.13+ with Bluetooth 4.0+
+   - Windows 10+ with Bluetooth support
+   - Linux with bluez and dbus
+
+5. DEBUGGING:
+   - Check terminal output for detailed error information
+   - Review system information above
+   - Try running as administrator/sudo if needed
+        """
+        error_dialog.setInformativeText(troubleshooting)
+        
+        error_dialog.exec()
     
     def add_device(self, device_info):
         """Add or update a device in the table"""
@@ -725,20 +837,44 @@ class BLEScannerApp(QMainWindow):
 
 def main():
     """Main application entry point"""
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion')  # Use Fusion style for better cross-platform appearance
-    
-    # Set application properties
-    app.setApplicationName("BLE Scanner")
-    app.setApplicationVersion("1.0")
-    app.setOrganizationName("BLE Scanner App")
-    
-    # Create and show the main window
-    window = BLEScannerApp()
-    window.show()
-    
-    # Run the application
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        app.setStyle('Fusion')  # Use Fusion style for better cross-platform appearance
+        
+        # Set application properties
+        app.setApplicationName("BLE Scanner")
+        app.setApplicationVersion("1.0")
+        app.setOrganizationName("BLE Scanner App")
+        
+        # Print startup information
+        print("=== BLE SCANNER STARTUP ===")
+        print(get_system_info())
+        print("=== STARTING APPLICATION ===")
+        
+        # Create and show the main window
+        window = BLEScannerApp()
+        window.show()
+        
+        # Run the application
+        sys.exit(app.exec())
+        
+    except Exception as e:
+        detailed_error = get_detailed_error_info(e, "BLE Scanner - main function")
+        print(f"BLE SCANNER STARTUP ERROR (Terminal):\n{detailed_error}")
+        
+        # Try to show error dialog if possible
+        try:
+            if 'app' in locals():
+                error_dialog = QMessageBox()
+                error_dialog.setIcon(QMessageBox.Critical)
+                error_dialog.setWindowTitle("BLE Scanner Startup Error")
+                error_dialog.setText(f"Failed to start BLE Scanner:\n\n{str(e)}")
+                error_dialog.setDetailedText(detailed_error)
+                error_dialog.exec()
+        except:
+            pass
+        
+        sys.exit(1)
 
 
 if __name__ == "__main__":
