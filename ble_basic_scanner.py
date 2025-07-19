@@ -840,6 +840,18 @@ TROUBLESHOOTING TIPS:
 def main():
     """Main application entry point"""
     try:
+        # Check Python version compatibility
+        python_version = sys.version_info
+        if python_version < (3, 8):
+            print("ERROR: Python 3.8 or higher is required!")
+            print(f"Current Python version: {python_version.major}.{python_version.minor}.{python_version.micro}")
+            sys.exit(1)
+        
+        if python_version >= (3, 11):
+            print(f"Python {python_version.major}.{python_version.minor} detected - using latest features")
+        else:
+            print(f"Python {python_version.major}.{python_version.minor} detected - using compatible mode")
+        
         app = QApplication(sys.argv)
         app.setStyle('Fusion')  # Use Fusion style for better cross-platform appearance
         
