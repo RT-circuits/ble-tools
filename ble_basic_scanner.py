@@ -26,13 +26,7 @@ try:
     from bleak.backends.scanner import AdvertisementData
     from bleak.backends.device import BLEDevice
 except ImportError:
-    print("Bleak library not found. Please install it with: pip install bleak==0.19.5")
-    sys.exit(1)
-except Exception as e:
-    print(f"Error importing bleak: {e}")
-    print("This might be a Python version compatibility issue.")
-    print("Try installing bleak version 0.19.5: pip install bleak==0.19.5")
-    print("Or upgrade to Python 3.11+ for latest bleak versions.")
+    print("Bleak library not found. Please install it with: pip install bleak")
     sys.exit(1)
 
 from manufacturer_ids import get_manufacturer_name
@@ -848,15 +842,13 @@ def main():
     try:
         # Check Python version compatibility
         python_version = sys.version_info
-        if python_version < (3, 8):
-            print("ERROR: Python 3.8 or higher is required!")
+        if python_version < (3, 11):
+            print("ERROR: Python 3.11 or higher is required!")
             print(f"Current Python version: {python_version.major}.{python_version.minor}.{python_version.micro}")
+            print("Please upgrade to Python 3.11+ to use the latest features.")
             sys.exit(1)
         
-        if python_version >= (3, 11):
-            print(f"Python {python_version.major}.{python_version.minor} detected - using latest features")
-        else:
-            print(f"Python {python_version.major}.{python_version.minor} detected - using compatible mode")
+        print(f"Python {python_version.major}.{python_version.minor} detected - using latest features")
         
         app = QApplication(sys.argv)
         app.setStyle('Fusion')  # Use Fusion style for better cross-platform appearance

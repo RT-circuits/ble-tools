@@ -2,6 +2,8 @@
 
 - `ble_basic_scanner.py`: Rough Python BLE inspector/scanner/monitor that shows service UUIDs and its details from Bluetooth advertisements. PySide6 UI. Real time updates
 
+**Requires Python 3.11 or higher**
+
 ## Install
 
 ```bash
