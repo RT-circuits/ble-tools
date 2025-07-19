@@ -14,7 +14,7 @@ import json
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QTableWidget, QTableWidgetItem, 
                                QLabel, QTextEdit, QHeaderView, QMessageBox, QProgressBar,
-                               QSplitter)
+                               QSplitter, QDialog, QScrollArea, QFrame, QGridLayout)
 from PySide6.QtCore import QThread, QTimer, Signal, QObject, Qt
 from PySide6.QtGui import QFont, QIcon
 
@@ -194,6 +194,133 @@ class BLEScannerThread(QThread):
         self.worker.stop_scanning()
 
 
+class ManufacturerDataViewer(QDialog):
+    """Dialog for viewing detailed manufacturer data"""
+    
+    def __init__(self, manufacturer_data, manufacturer_name, parent=None):
+        super().__init__(parent)
+        self.manufacturer_data = manufacturer_data
+        self.manufacturer_name = manufacturer_name
+        self.init_ui()
+        
+    def init_ui(self):
+        """Initialize the dialog UI"""
+        self.setWindowTitle(f"Manufacturer Data Viewer - {self.manufacturer_name}")
+        self.setGeometry(200, 200, 800, 600)
+        self.setModal(True)
+        
+        layout = QVBoxLayout(self)
+        
+        # Header
+        header_label = QLabel(f"Manufacturer: {self.manufacturer_name}")
+        header_label.setStyleSheet("font-size: 16px; font-weight: bold; margin: 10px;")
+        layout.addWidget(header_label)
+        
+        # Scroll area for content
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        if not self.manufacturer_data:
+            no_data_label = QLabel("No manufacturer data available")
+            no_data_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
+            scroll_layout.addWidget(no_data_label)
+        else:
+            # Display manufacturer data for each manufacturer ID
+            for manufacturer_id, data_bytes in self.manufacturer_data.items():
+                # Create a frame for each manufacturer
+                frame = QFrame()
+                frame.setFrameStyle(QFrame.Box)
+                frame.setStyleSheet("QFrame { border: 1px solid #ccc; margin: 5px; padding: 10px; }")
+                frame_layout = QVBoxLayout(frame)
+                
+                # Manufacturer ID header
+                id_label = QLabel(f"Manufacturer ID: 0x{manufacturer_id:04X}")
+                id_label.setStyleSheet("font-weight: bold; color: #333;")
+                frame_layout.addWidget(id_label)
+                
+                # Data length
+                data_length = len(data_bytes)
+                length_label = QLabel(f"Data Length: {data_length} bytes")
+                length_label.setStyleSheet("color: #666;")
+                frame_layout.addWidget(length_label)
+                
+                # Raw hex data
+                hex_data = data_bytes.hex().upper()
+                hex_label = QLabel("Raw Data (Hex):")
+                hex_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+                frame_layout.addWidget(hex_label)
+                
+                hex_text = QTextEdit()
+                hex_text.setPlainText(hex_data)
+                hex_text.setMaximumHeight(100)
+                hex_text.setStyleSheet("font-family: 'Courier New', monospace; font-size: 12px;")
+                frame_layout.addWidget(hex_text)
+                
+                # Formatted hex data (with spaces)
+                formatted_hex = ' '.join(hex_data[i:i+2] for i in range(0, len(hex_data), 2))
+                formatted_label = QLabel("Formatted Data:")
+                formatted_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+                frame_layout.addWidget(formatted_label)
+                
+                formatted_text = QTextEdit()
+                formatted_text.setPlainText(formatted_hex)
+                formatted_text.setMaximumHeight(100)
+                formatted_text.setStyleSheet("font-family: 'Courier New', monospace; font-size: 12px;")
+                frame_layout.addWidget(formatted_text)
+                
+                # Binary representation
+                binary_label = QLabel("Binary Data:")
+                binary_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+                frame_layout.addWidget(binary_label)
+                
+                binary_data = ' '.join(format(byte, '08b') for byte in data_bytes)
+                binary_text = QTextEdit()
+                binary_text.setPlainText(binary_data)
+                binary_text.setMaximumHeight(100)
+                binary_text.setStyleSheet("font-family: 'Courier New', monospace; font-size: 11px;")
+                frame_layout.addWidget(binary_text)
+                
+                # ASCII representation (if printable)
+                ascii_label = QLabel("ASCII Representation:")
+                ascii_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+                frame_layout.addWidget(ascii_label)
+                
+                ascii_data = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in data_bytes)
+                ascii_text = QTextEdit()
+                ascii_text.setPlainText(ascii_data)
+                ascii_text.setMaximumHeight(60)
+                ascii_text.setStyleSheet("font-family: 'Courier New', monospace; font-size: 12px;")
+                frame_layout.addWidget(ascii_text)
+                
+                scroll_layout.addWidget(frame)
+        
+        scroll_area.setWidget(scroll_widget)
+        layout.addWidget(scroll_area)
+        
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: #ffffff;
+                border: 1px solid #9e9e9e;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: 4px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #9e9e9e;
+                color: white;
+                border-color: #bdbdbd;
+            }
+        """)
+        layout.addWidget(close_button)
+
+
 class BLEScannerApp(QMainWindow):
     """Main BLE Scanner Application"""
     
@@ -324,10 +451,36 @@ class BLEScannerApp(QMainWindow):
             }
         """)
         
+        self.manufacturer_viewer_button = QPushButton("🏭 Manufacturer Data")
+        self.manufacturer_viewer_button.clicked.connect(self.show_manufacturer_data_viewer)
+        self.manufacturer_viewer_button.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: #ffffff;
+                border: 1px solid #9e9e9e;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: 4px;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background-color: #9e9e9e;
+                color: white;
+                border-color: #bdbdbd;
+            }
+            QPushButton:pressed {
+                background-color: #616161;
+                color: white;
+                border-color: #757575;
+            }
+        """)
+        
         button_layout.addWidget(self.scan_button)
         button_layout.addWidget(self.clear_button)
         button_layout.addWidget(self.export_button)
         button_layout.addWidget(self.filter_zt_button)
+        button_layout.addWidget(self.manufacturer_viewer_button)
         button_layout.addStretch()
         
         layout.addLayout(button_layout)
@@ -633,6 +786,41 @@ class BLEScannerApp(QMainWindow):
                                   f"Results exported to {filename}")
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to export: {str(e)}")
+    
+    def show_manufacturer_data_viewer(self):
+        """Show manufacturer data viewer for selected device"""
+        # Get selected row
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            QMessageBox.information(self, "Manufacturer Data", "Please select a device first")
+            return
+        
+        # Get device address from selected row
+        address_item = self.table.item(current_row, 0)
+        if not address_item:
+            QMessageBox.information(self, "Manufacturer Data", "No device selected")
+            return
+        
+        address = address_item.text()
+        
+        # Find device in our data
+        device_info = None
+        for device in self.devices.values():
+            if device['address'] == address:
+                device_info = device
+                break
+        
+        if not device_info:
+            QMessageBox.information(self, "Manufacturer Data", "Device not found in data")
+            return
+        
+        # Get manufacturer data and name
+        manufacturer_data = device_info.get('raw_data', {}).get('manufacturer_data', {})
+        manufacturer_name = device_info.get('manufacturer', 'Unknown')
+        
+        # Show the dialog
+        dialog = ManufacturerDataViewer(manufacturer_data, manufacturer_name, self)
+        dialog.exec()
     
     def closeEvent(self, event):
         """Handle application close event"""
