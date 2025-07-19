@@ -660,7 +660,9 @@ class BLEScannerApp(QMainWindow):
     
     def on_error(self, error_msg):
         """Handle error events with detailed information"""
-        self.status_label.setText(f"Error: {error_msg.split('\\n')[0]}")
+        # Extract first line of error message for status bar
+        first_line = error_msg.split('\n')[0] if '\n' in error_msg else error_msg
+        self.status_label.setText(f"Error: {first_line}")
         
         # Create detailed error dialog
         error_dialog = QMessageBox(self)
