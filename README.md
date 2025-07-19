@@ -7,11 +7,12 @@
 ```bash
 pip install -r requirements.txt
 ```
+(`PySide6` and `bleak`)
 
 ## Run
 
 ```bash
-python ble_adv_serv_uuid_scanner.py
+python ble_basic_scanner.py
 ```
 
 ## Features
