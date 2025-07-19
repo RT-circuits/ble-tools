@@ -26,7 +26,13 @@ try:
     from bleak.backends.scanner import AdvertisementData
     from bleak.backends.device import BLEDevice
 except ImportError:
-    print("Bleak library not found. Please install it with: pip install bleak")
+    print("Bleak library not found. Please install it with: pip install bleak==0.19.5")
+    sys.exit(1)
+except Exception as e:
+    print(f"Error importing bleak: {e}")
+    print("This might be a Python version compatibility issue.")
+    print("Try installing bleak version 0.19.5: pip install bleak==0.19.5")
+    print("Or upgrade to Python 3.11+ for latest bleak versions.")
     sys.exit(1)
 
 from manufacturer_ids import get_manufacturer_name
