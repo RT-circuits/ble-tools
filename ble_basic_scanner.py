@@ -100,36 +100,33 @@ class BLEScannerWorker(QObject):
         self.scanner = None
         
     async def start_scanning(self):
-        """Start BLE scanning"""
+        """Start BLE scanning using async iterator pattern"""
         try:
             self.is_scanning = True
             self.scan_started.emit()
             
-            # Simple scanning approach without context manager
-            scanner = BleakScanner(detection_callback=self.detection_callback)
-            self.scanner = scanner
-            
-            await scanner.start()
-            
-            # Keep scanning until stopped
-            while self.is_scanning:
-                await asyncio.sleep(0.1)
+            # Use async iterator pattern from Bleak
+            async with BleakScanner() as scanner:
+                self.scanner = scanner
                 
+                # Use async iterator to get devices
+                async for device, advertisement_data in scanner.advertisement_data():
+                    if not self.is_scanning:
+                        break
+                    
+                    # Process the device using the same logic as before
+                    await self.process_device(device, advertisement_data)
+                    
         except Exception as e:
             detailed_error = get_detailed_error_info(e, "BLE Scanner Worker - start_scanning")
             print(f"BLE SCANNER ERROR (Terminal):\n{detailed_error}")
             self.error_occurred.emit(f"Scanning error: {str(e)}\n\nSee terminal for detailed error information.")
         finally:
-            try:
-                if self.scanner:
-                    await self.scanner.stop()
-            except:
-                pass
             self.is_scanning = False
             self.scan_stopped.emit()
     
-    def detection_callback(self, device: BLEDevice, advertisement_data: AdvertisementData):
-        """Callback for when a device is detected"""
+    async def process_device(self, device: BLEDevice, advertisement_data: AdvertisementData):
+        """Process a discovered device using the same logic as the old callback"""
         try:
             # Extract manufacturer data
             manufacturer_data = advertisement_data.manufacturer_data
@@ -221,9 +218,11 @@ class BLEScannerWorker(QObject):
             self.device_found.emit(device_info)
             
         except Exception as e:
-            detailed_error = get_detailed_error_info(e, f"BLE Scanner Worker - detection_callback for device {device.address}")
+            detailed_error = get_detailed_error_info(e, f"BLE Scanner Worker - process_device for device {device.address}")
             print(f"BLE DEVICE PROCESSING ERROR (Terminal):\n{detailed_error}")
             self.error_occurred.emit(f"Error processing device {device.address}: {str(e)}\n\nSee terminal for detailed error information.")
+    
+
     
     def stop_scanning(self):
         """Stop BLE scanning"""
