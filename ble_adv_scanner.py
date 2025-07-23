@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayo
 from PySide6.QtCore import QThread, QTimer, Signal, QObject, Qt
 from PySide6.QtGui import QFont, QIcon
 
+
+
 try:
     from bleak import BleakScanner, BleakClient
     from bleak.backends.scanner import AdvertisementData
@@ -30,6 +32,9 @@ except ImportError:
     sys.exit(1)
 
 from manufacturer_ids import get_manufacturer_name
+
+
+
 
 
 def get_system_info():
@@ -141,42 +146,45 @@ class BLEScannerWorker(QObject):
                 if manufacturer_name.startswith("Unknown"):
                     manufacturer_name = f"0x{manufacturer_id:04X}"
             
-            # Extract service UUIDs from both service_uuids and service_data
+            # Extract service UUIDs (only from service_uuids, not service_data)
             service_uuids = advertisement_data.service_uuids or []
-            service_data_uuids = list(advertisement_data.service_data.keys()) if advertisement_data.service_data else []
-            
-            # Combine both sources of service UUIDs
-            all_service_uuids = list(set(service_uuids + service_data_uuids))
             
             # Convert 128-bit UUIDs to 16-bit notation if they use SIG base
-            converted_uuids = []
-            for uuid in all_service_uuids:
+            converted_service_uuids = []
+            for uuid in service_uuids:
                 # Check if it's a 128-bit UUID using SIG base
                 if len(uuid) == 36 and uuid.endswith('-0000-1000-8000-00805f9b34fb'):
                     # Extract the 16-bit part
                     parts = uuid.split('-')
                     if len(parts) == 5 and parts[0].startswith('0000'):
                         sixteen_bit = parts[0][4:]  # Remove '0000' prefix
-                        converted_uuids.append(sixteen_bit)
+                        converted_service_uuids.append(sixteen_bit)
                     else:
-                        converted_uuids.append(uuid)
+                        converted_service_uuids.append(uuid)
                 else:
-                    converted_uuids.append(uuid)
+                    converted_service_uuids.append(uuid)
             
-            service_uuids_str = "\n".join(converted_uuids) if converted_uuids else ""
+            service_uuids_str = "\n".join(converted_service_uuids) if converted_service_uuids else ""
             
-            # Create service data strings for each UUID
+            # Create service data strings with UUID and data on separate lines
             service_data_strings = []
-            for uuid in all_service_uuids:
-                if uuid in advertisement_data.service_data:
-                    # Get the hex data
-                    hex_data = advertisement_data.service_data[uuid].hex().upper()
-                    service_data_strings.append(hex_data)
-                else:
-                    # UUID has no data
-                    service_data_strings.append("null")
+            if advertisement_data.service_data:
+                for uuid, data in advertisement_data.service_data.items():
+                    # Convert UUID to 16-bit if possible
+                    if len(uuid) == 36 and uuid.endswith('-0000-1000-8000-00805f9b34fb'):
+                        parts = uuid.split('-')
+                        if len(parts) == 5 and parts[0].startswith('0000'):
+                            uuid_display = parts[0][4:]  # Remove '0000' prefix
+                        else:
+                            uuid_display = uuid
+                    else:
+                        uuid_display = uuid
+                    
+                    # Convert data to hex
+                    hex_data = data.hex().upper()
+                    service_data_strings.append(f"{uuid_display}\ndata: {hex_data}")
             
-            service_data_str = "\n".join(service_data_strings) if service_data_strings else ""
+            service_data_str = "\n\n".join(service_data_strings) if service_data_strings else ""
             
             # Extract RSSI
             rssi = getattr(advertisement_data, 'rssi', 'N/A')
@@ -188,15 +196,12 @@ class BLEScannerWorker(QObject):
             # Current timestamp
             last_seen = datetime.now().strftime("%H:%M:%S")
             
-            # Create enhanced service_data with all UUIDs (including those without data)
+            # Create enhanced service_data with service data UUIDs
             enhanced_service_data = {}
-            for uuid in all_service_uuids:
-                if uuid in advertisement_data.service_data:
+            if advertisement_data.service_data:
+                for uuid, data in advertisement_data.service_data.items():
                     # UUID has data - convert bytes to hex string
-                    enhanced_service_data[uuid] = advertisement_data.service_data[uuid].hex().upper()
-                else:
-                    # UUID has no data - set to null
-                    enhanced_service_data[uuid] = None
+                    enhanced_service_data[uuid] = data.hex().upper()
             
             device_info = {
                 'address': device.address,
@@ -533,8 +538,14 @@ class BLEScannerApp(QMainWindow):
         header.setSectionResizeMode(5, QHeaderView.Interactive)  # RSSI
         header.setSectionResizeMode(6, QHeaderView.Interactive)  # Last Seen
         
-        # Set initial column widths
-        self.table.setColumnWidth(0, 200)  # Address
+        # Set initial column widths based on platform
+        # Address column width: macOS (UUIDs) are longer than Linux (MAC addresses)
+        if platform.system() == "Darwin":  # macOS
+            address_width = 300  # Longer for UUIDs like "89147A0C-6CB8-AEED-FC9F-9F6E8DCF2ABB"
+        else:  # Linux, Windows, etc.
+            address_width = 150  # Shorter for MAC addresses like "AA:BB:CC:DD:EE:FF"
+        
+        self.table.setColumnWidth(0, address_width)  # Address
         self.table.setColumnWidth(1, 150)  # Name
         self.table.setColumnWidth(2, 180)  # Manufacturer
         self.table.setColumnWidth(3, 200)  # Service UUIDs
