@@ -1,6 +1,7 @@
 # BLE Tools
 
 - `ble_basic_scanner.py`: Rough Python BLE inspector/scanner/monitor that shows service UUIDs and its details from Bluetooth advertisements. PySide6 UI. Real time updates
+- `ble_adv_scanner.py`: As above, but with distinction between service UUID's (advertisement AD types 0x02-0x07)and service UUID data (AD types 0x16, 0x20-0x21). Inspection panel for mfg data, service UUIDs and service UUID data
 
 **Requires Python 3.11 or higher**
 

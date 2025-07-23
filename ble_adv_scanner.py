@@ -148,10 +148,11 @@ class BLEScannerWorker(QObject):
             
             # Extract service UUIDs (only from service_uuids, not service_data)
             service_uuids = advertisement_data.service_uuids or []
+            all_service_uuids = service_uuids
             
             # Convert 128-bit UUIDs to 16-bit notation if they use SIG base
             converted_service_uuids = []
-            for uuid in service_uuids:
+            for uuid in all_service_uuids:
                 # Check if it's a 128-bit UUID using SIG base
                 if len(uuid) == 36 and uuid.endswith('-0000-1000-8000-00805f9b34fb'):
                     # Extract the 16-bit part
@@ -168,9 +169,11 @@ class BLEScannerWorker(QObject):
             
             # Create service data strings with UUID and data on separate lines
             service_data_strings = []
+            enhanced_service_data = {}
+            
             if advertisement_data.service_data:
                 for uuid, data in advertisement_data.service_data.items():
-                    # Convert UUID to 16-bit if possible
+                    # Convert UUID to 16-bit if possible for display
                     if len(uuid) == 36 and uuid.endswith('-0000-1000-8000-00805f9b34fb'):
                         parts = uuid.split('-')
                         if len(parts) == 5 and parts[0].startswith('0000'):
@@ -183,6 +186,9 @@ class BLEScannerWorker(QObject):
                     # Convert data to hex
                     hex_data = data.hex().upper()
                     service_data_strings.append(f"{uuid_display}\ndata: {hex_data}")
+                    
+                    # Store in enhanced_service_data using the display UUID for consistency
+                    enhanced_service_data[uuid_display] = data.hex().upper()
             
             service_data_str = "\n\n".join(service_data_strings) if service_data_strings else ""
             
@@ -195,13 +201,6 @@ class BLEScannerWorker(QObject):
             
             # Current timestamp
             last_seen = datetime.now().strftime("%H:%M:%S")
-            
-            # Create enhanced service_data with service data UUIDs
-            enhanced_service_data = {}
-            if advertisement_data.service_data:
-                for uuid, data in advertisement_data.service_data.items():
-                    # UUID has data - convert bytes to hex string
-                    enhanced_service_data[uuid] = data.hex().upper()
             
             device_info = {
                 'address': device.address,
@@ -405,7 +404,7 @@ class BLEScannerApp(QMainWindow):
     def init_ui(self):
         """Initialize the user interface"""
         self.setWindowTitle("BLE Advertised Service UUID Monitor")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setGeometry(100, 100, 1600, 800)
         
         # Create central widget
         central_widget = QWidget()
@@ -541,17 +540,17 @@ class BLEScannerApp(QMainWindow):
         # Set initial column widths based on platform
         # Address column width: macOS (UUIDs) are longer than Linux (MAC addresses)
         if platform.system() == "Darwin":  # macOS
-            address_width = 300  # Longer for UUIDs like "89147A0C-6CB8-AEED-FC9F-9F6E8DCF2ABB"
+            address_width = 280  # Increased for macOS UUIDs like "89147A0C-6CB8-AEED-FC9F-9F6E8DCF2ABB"
         else:  # Linux, Windows, etc.
-            address_width = 150  # Shorter for MAC addresses like "AA:BB:CC:DD:EE:FF"
+            address_width = 120  # MAC addresses like "AA:BB:CC:DD:EE:FF"
         
         self.table.setColumnWidth(0, address_width)  # Address
-        self.table.setColumnWidth(1, 150)  # Name
-        self.table.setColumnWidth(2, 180)  # Manufacturer
-        self.table.setColumnWidth(3, 200)  # Service UUIDs
-        self.table.setColumnWidth(4, 200)  # Service Data
-        self.table.setColumnWidth(5, 80)   # RSSI
-        self.table.setColumnWidth(6, 100)  # Last Seen
+        self.table.setColumnWidth(1, 140)  # Name
+        self.table.setColumnWidth(2, 160)  # Manufacturer
+        self.table.setColumnWidth(3, 180)  # Service UUIDs
+        self.table.setColumnWidth(4, 180)  # Service Data
+        self.table.setColumnWidth(5, 70)   # RSSI
+        self.table.setColumnWidth(6, 90)   # Last Seen
         
         # Set table styling for clean appearance
         self.table.setShowGrid(False)
@@ -564,25 +563,153 @@ class BLEScannerApp(QMainWindow):
         # Hide row numbers (first column)
         self.table.verticalHeader().setVisible(False)
         
-        # Set custom selection color (blue)
+        # Set custom selection color (blue) and smaller font
         self.table.setStyleSheet("""
+            QTableWidget {
+                font-size: 11px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
             QTableWidget::item:selected {
                 background-color: #007AFF;
                 color: white;
             }
+            QHeaderView::section {
+                font-size: 11px;
+                font-weight: 600;
+                background-color: #f5f5f5;
+                border: 1px solid #ddd;
+                padding: 4px;
+            }
         """)
         
-        splitter.addWidget(self.table)
+        # Create main splitter: left (table + raw data) and right (panels)
+        main_splitter = QSplitter(Qt.Horizontal)
+        
+        # Create left side splitter for table and raw data
+        left_splitter = QSplitter(Qt.Vertical)
+        left_splitter.addWidget(self.table)
         
         # Raw data text area
         self.raw_data_text = QTextEdit()
         self.raw_data_text.setPlaceholderText("Select a device to view raw data...")
-        splitter.addWidget(self.raw_data_text)
+        self.raw_data_text.setStyleSheet("""
+            QTextEdit {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                font-size: 11px;
+                background-color: #fafafa;
+                border: 1px solid #ddd;
+            }
+        """)
+        left_splitter.addWidget(self.raw_data_text)
         
-        # Set initial splitter sizes (table gets more space)
-        splitter.setSizes([600, 200])
+        # Set initial left splitter sizes (table gets more space)
+        left_splitter.setSizes([700, 150])
         
-        layout.addWidget(splitter)
+        main_splitter.addWidget(left_splitter)
+        
+        # Create right side splitter for the three panels
+        right_splitter = QSplitter(Qt.Vertical)
+        
+        # Manufacturer data panel
+        self.manufacturer_panel = QWidget()
+        manufacturer_layout = QVBoxLayout(self.manufacturer_panel)
+        
+        # Manufacturer panel header
+        manufacturer_header = QLabel("Manufacturer Data")
+        manufacturer_header.setStyleSheet("""
+            font-size: 12px; 
+            font-weight: bold; 
+            color: #333; 
+            padding: 6px; 
+            background-color: #f5f5f5; 
+            border-bottom: 1px solid #ddd;
+        """)
+        manufacturer_layout.addWidget(manufacturer_header)
+        
+        # Manufacturer details content area
+        self.manufacturer_details_text = QTextEdit()
+        self.manufacturer_details_text.setPlaceholderText("Select a device to view manufacturer details...")
+        self.manufacturer_details_text.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                background-color: #fafafa;
+                border: 1px solid #ddd;
+            }
+        """)
+        manufacturer_layout.addWidget(self.manufacturer_details_text)
+        
+        right_splitter.addWidget(self.manufacturer_panel)
+        
+        # Service UUIDs panel
+        self.service_uuids_panel = QWidget()
+        service_uuids_layout = QVBoxLayout(self.service_uuids_panel)
+        
+        # Service UUIDs panel header
+        service_uuids_header = QLabel("Service UUIDs")
+        service_uuids_header.setStyleSheet("""
+            font-size: 12px; 
+            font-weight: bold; 
+            color: #333; 
+            padding: 6px; 
+            background-color: #f5f5f5; 
+            border-bottom: 1px solid #ddd;
+        """)
+        service_uuids_layout.addWidget(service_uuids_header)
+        
+        # Service UUIDs details content area
+        self.service_uuids_details_text = QTextEdit()
+        self.service_uuids_details_text.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                background-color: #fafafa;
+                border: 1px solid #ddd;
+            }
+        """)
+        service_uuids_layout.addWidget(self.service_uuids_details_text)
+        
+        right_splitter.addWidget(self.service_uuids_panel)
+        
+        # Service data panel
+        self.service_data_panel = QWidget()
+        service_data_layout = QVBoxLayout(self.service_data_panel)
+        
+        # Service data panel header
+        service_data_header = QLabel("Service Data")
+        service_data_header.setStyleSheet("""
+            font-size: 12px; 
+            font-weight: bold; 
+            color: #333; 
+            padding: 6px; 
+            background-color: #f5f5f5; 
+            border-bottom: 1px solid #ddd;
+        """)
+        service_data_layout.addWidget(service_data_header)
+        
+        # Service data details content area
+        self.service_data_details_text = QTextEdit()
+        self.service_data_details_text.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                background-color: #fafafa;
+                border: 1px solid #ddd;
+            }
+        """)
+        service_data_layout.addWidget(self.service_data_details_text)
+        
+        right_splitter.addWidget(self.service_data_panel)
+        
+        # Set initial right splitter sizes (equal split for 3 panels)
+        right_splitter.setSizes([200, 200, 200])
+        
+        main_splitter.addWidget(right_splitter)
+        
+        # Set initial main splitter sizes (right pane 20% wider)
+        main_splitter.setSizes([950, 300])
+        
+        layout.addWidget(main_splitter)
         
         # Connect table selection
         self.table.itemSelectionChanged.connect(self.show_raw_data)
@@ -782,11 +909,13 @@ TROUBLESHOOTING TIPS:
             address = self.table.item(row, 0).text()
             if address in self.devices:
                 device_info = self.devices[address]
-                raw_data = json.dumps(device_info['raw_data'], indent=2, default=str)
-                self.raw_data_text.setText(f"raw_data = {raw_data}")
+                self.update_manufacturer_details(device_info)
+                self.update_service_uuids_details(device_info)
+                self.update_service_data_details(device_info)
+                self.update_raw_data_panel(device_info)
     
     def update_raw_data_if_selected(self, address):
-        """Update raw data pane if the given address is currently selected"""
+        """Update panels if the given address is currently selected"""
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return
@@ -794,14 +923,16 @@ TROUBLESHOOTING TIPS:
         row = selected_rows[0].row()
         selected_address = self.table.item(row, 0).text()
         
-        # If the updated device is the currently selected one, update the raw data
+        # If the updated device is the currently selected one, update the panels
         if selected_address == address and address in self.devices:
             device_info = self.devices[address]
-            raw_data = json.dumps(device_info['raw_data'], indent=2, default=str)
-            self.raw_data_text.setText(f"raw_data = {raw_data}")
+            self.update_manufacturer_details(device_info)
+            self.update_service_uuids_details(device_info)
+            self.update_service_data_details(device_info)
+            self.update_raw_data_panel(device_info)
     
     def show_raw_data(self):
-        """Show raw data for selected device"""
+        """Show data for selected device in panels"""
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return
@@ -811,13 +942,221 @@ TROUBLESHOOTING TIPS:
         
         if address in self.devices:
             device_info = self.devices[address]
-            raw_data = json.dumps(device_info['raw_data'], indent=2, default=str)
-            self.raw_data_text.setText(f"raw_data = {raw_data}")
+            self.update_manufacturer_details(device_info)
+            self.update_service_uuids_details(device_info)
+            self.update_service_data_details(device_info)
+            self.update_raw_data_panel(device_info)
+    
+    def update_manufacturer_details(self, device_info):
+        """Update the manufacturer details panel with device information"""
+        manufacturer_data = device_info.get('raw_data', {}).get('manufacturer_data', {})
+        manufacturer_name = device_info.get('manufacturer', 'Unknown')
+        manufacturer_id = device_info.get('manufacturer_id', '')
+        
+        # Build manufacturer information
+        details = []
+        details.append(f"Manufacturer: {manufacturer_name}")
+        if manufacturer_id:
+            details.append(f"Manufacturer ID: {manufacturer_id}")
+        details.append("")
+        
+        if not manufacturer_data:
+            details.append("No manufacturer-specific data available for this device.")
+            self.manufacturer_details_text.setText('\n'.join(details))
+            return
+        
+        # Build detailed manufacturer information
+        details = []
+        details.append(f"Manufacturer: {manufacturer_name}")
+        if manufacturer_id:
+            details.append(f"Manufacturer ID: {manufacturer_id}")
+        details.append("")
+        
+        for mfg_id, data_bytes in manufacturer_data.items():
+            
+            # Handle both byte objects and string representations
+            if isinstance(data_bytes, str):
+                # Convert string representation back to bytes
+                try:
+                    # Remove the b'...' wrapper and convert escaped hex
+                    if data_bytes.startswith("b'") and data_bytes.endswith("'"):
+                        # Extract the content and convert escaped sequences
+                        content = data_bytes[2:-1]  # Remove b' and '
+                        # Convert escaped hex sequences like \x02 to actual bytes
+                        data_bytes = content.encode('latin-1').decode('unicode_escape').encode('latin-1')
+                    else:
+                        # Try to decode as hex string
+                        data_bytes = bytes.fromhex(data_bytes)
+                except Exception as e:
+                    details.append(f"Error parsing manufacturer data: {e}")
+                    details.append("")
+                    continue
+            
+            details.append(f"Data Length: {len(data_bytes)} bytes")
+            details.append("")
+            
+            # Raw hex data
+            hex_data = data_bytes.hex().upper()
+            details.append("Raw Data (Hex):")
+            details.append(hex_data)
+            details.append("")
+            
+            # Wireshark-style hex dump with ASCII
+            details.append("Hex Dump:")
+            
+            # Process data in 8-byte chunks
+            for i in range(0, len(data_bytes), 8):
+                chunk = data_bytes[i:i+8]
+                
+                # Offset (4-digit hex)
+                offset = f"{i:04X}"
+                
+                # Hex bytes (8 bytes, space-separated)
+                hex_bytes = []
+                ascii_chars = []
+                
+                for j, byte in enumerate(chunk):
+                    hex_bytes.append(f"{byte:02X}")
+                    # ASCII representation (printable chars or dots)
+                    if 32 <= byte <= 126:
+                        ascii_chars.append(chr(byte))
+                    else:
+                        ascii_chars.append('.')
+                
+                # Pad with spaces if less than 8 bytes
+                while len(hex_bytes) < 8:
+                    hex_bytes.append("  ")
+                    ascii_chars.append(" ")
+                
+                # Format the line: offset + hex bytes + ASCII
+                hex_part = ' '.join(hex_bytes)
+                ascii_part = ''.join(ascii_chars)
+                line = f"{offset}: {hex_part}  |{ascii_part}|"
+                details.append(line)
+            
+            details.append("")
+        
+        self.manufacturer_details_text.setText('\n'.join(details))
+    
+    def update_service_uuids_details(self, device_info):
+        """Update the service UUIDs details panel with device information"""
+        service_uuids = device_info.get('service_uuids', '')
+        
+        if not service_uuids:
+            self.service_uuids_details_text.clear()
+            return
+        
+        # Build detailed service UUIDs information
+        details = []
+        details.append("Service UUIDs:")
+        details.append("")
+        
+        # Split by newlines and process each UUID
+        uuids = service_uuids.split('\n')
+        for i, uuid in enumerate(uuids):
+            if uuid.strip():
+                details.append(f"{i+1}. {uuid}")
+        
+        details.append("")
+        details.append(f"Total: {len([u for u in uuids if u.strip()])} service UUID(s)")
+        
+        self.service_uuids_details_text.setText('\n'.join(details))
+    
+    def update_service_data_details(self, device_info):
+        """Update the service data details panel with device information"""
+        service_data = device_info.get('raw_data', {}).get('service_data', {})
+        
+        if not service_data:
+            self.service_data_details_text.clear()
+            return
+        
+        # Build detailed service information
+        details = []
+        
+        # Sort UUIDs for consistent display order
+        sorted_uuids = sorted(service_data.keys())
+        
+        for uuid in sorted_uuids:
+            data_hex = service_data[uuid]
+            details.append(f"UUID: {uuid}")
+            
+            if data_hex is None:
+                # Service UUID exists but has no data
+                details.append("Data Length: 0 bytes")
+                details.append("")
+                details.append("Raw Data (Hex):")
+                details.append("(no data)")
+                details.append("")
+                details.append("Hex Dump:")
+                details.append("(no data)")
+                details.append("")
+                continue
+            
+            # Convert hex string back to bytes for analysis
+            try:
+                data_bytes = bytes.fromhex(data_hex)
+                details.append(f"Data Length: {len(data_bytes)} bytes")
+                details.append("")
+                
+                # Raw hex data
+                details.append("Raw Data (Hex):")
+                details.append(data_hex.upper())
+                details.append("")
+                
+                # Wireshark-style hex dump with ASCII
+                details.append("Hex Dump:")
+                details.append("")
+                
+                # Process data in 8-byte chunks
+                for i in range(0, len(data_bytes), 8):
+                    chunk = data_bytes[i:i+8]
+                    
+                    # Offset (4-digit hex)
+                    offset = f"{i:04X}"
+                    
+                    # Hex bytes (8 bytes, space-separated)
+                    hex_bytes = []
+                    ascii_chars = []
+                    
+                    for j, byte in enumerate(chunk):
+                        hex_bytes.append(f"{byte:02X}")
+                        # ASCII representation (printable chars or dots)
+                        if 32 <= byte <= 126:
+                            ascii_chars.append(chr(byte))
+                        else:
+                            ascii_chars.append('.')
+                    
+                    # Pad with spaces if less than 8 bytes
+                    while len(hex_bytes) < 8:
+                        hex_bytes.append("  ")
+                        ascii_chars.append(" ")
+                    
+                    # Format the line: offset + hex bytes + ASCII
+                    hex_part = ' '.join(hex_bytes)
+                    ascii_part = ''.join(ascii_chars)
+                    line = f"{offset}: {hex_part}  |{ascii_part}|"
+                    details.append(line)
+                
+                details.append("")
+                
+            except ValueError:
+                details.append(f"Invalid hex data: {data_hex}")
+                details.append("")
+        
+        self.service_data_details_text.setText('\n'.join(details))
+    
+    def update_raw_data_panel(self, device_info):
+        """Update the raw data panel with device information"""
+        raw_data = json.dumps(device_info['raw_data'], indent=2, default=str)
+        self.raw_data_text.setText(f"raw_data = {raw_data}")
     
     def clear_results(self):
         """Clear all results"""
         self.devices.clear()
         self.table.setRowCount(0)
+        self.manufacturer_details_text.clear()
+        self.service_uuids_details_text.clear()
+        self.service_data_details_text.clear()
         self.raw_data_text.clear()
         self.status_label.setText("Results cleared")
         
